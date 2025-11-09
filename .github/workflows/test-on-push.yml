@@ -34,9 +34,9 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/test_app.py -v
+          pytest tests/ -v
 
       - name: Check coverage
         run: |
-          pytest --cov=. --cov-report=term-missing | grep TOTAL
+          pytest tests/ --cov=. --cov-report=term-missing | grep TOTAL
 
