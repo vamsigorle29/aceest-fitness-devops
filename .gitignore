@@ -56,5 +56,5 @@ Thumbs.db
 
 # SonarQube
 .sonar/
-sonar-project.properties
+# Note: sonar-project.properties should be committed (it's configuration, not generated)
 
