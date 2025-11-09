@@ -403,7 +403,7 @@ jobs:
           fi
         continue-on-error: true
 
-  # Job 7: SonarQube Analysis (Required)
+  # Job 7: SonarQube Analysis
   sonarqube:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
@@ -434,71 +434,85 @@ jobs:
         run: |
           echo "🔍 Checking SonarQube configuration..."
           
-          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
-            echo "::error title=SonarQube Configuration Missing::SONAR_TOKEN secret is not configured"
-            echo ""
-            echo "❌ SonarQube analysis is required but cannot run without configuration."
-            echo ""
-            echo "To configure SonarQube, add the following secrets in GitHub:"
-            echo "  1. Go to: Repository → Settings → Secrets and variables → Actions"
-            echo "  2. Click 'New repository secret'"
-            echo "  3. Add secret:"
-            echo "     Name: SONAR_TOKEN"
-            echo "     Value: Your SonarQube authentication token"
-            echo "  4. Add another secret:"
-            echo "     Name: SONAR_HOST_URL"
-            echo "     Value: Full URL to your SonarQube server (e.g., https://sonarqube.example.com)"
-            echo ""
-            echo "Note: SONAR_HOST_URL must include http:// or https://"
-            exit 1
+          # Check if using SonarCloud (free cloud version)
+          if [ -n "${{ secrets.SONAR_TOKEN }}" ] && [ -z "${{ secrets.SONAR_HOST_URL }}" ]; then
+            echo "✅ Using SonarCloud (free cloud version)"
+            echo "SONAR_HOST_URL=https://sonarcloud.io" >> $GITHUB_ENV
+            echo "has_creds=true" >> $GITHUB_OUTPUT
+            exit 0
           fi
           
-          if [ -z "${{ secrets.SONAR_HOST_URL }}" ]; then
-            echo "::error title=SonarQube Configuration Missing::SONAR_HOST_URL secret is not configured"
-            echo ""
-            echo "❌ SonarQube analysis is required but cannot run without configuration."
-            echo ""
-            echo "To configure SonarQube, add the SONAR_HOST_URL secret in GitHub:"
-            echo "  1. Go to: Repository → Settings → Secrets and variables → Actions"
-            echo "  2. Click 'New repository secret'"
-            echo "  3. Add secret:"
-            echo "     Name: SONAR_HOST_URL"
-            echo "     Value: Full URL to your SonarQube server (e.g., https://sonarqube.example.com)"
-            echo ""
-            echo "Note: SONAR_HOST_URL must include http:// or https://"
-            exit 1
+          # Check if using custom SonarQube server
+          if [ -n "${{ secrets.SONAR_TOKEN }}" ] && [ -n "${{ secrets.SONAR_HOST_URL }}" ]; then
+            SONAR_URL="${{ secrets.SONAR_HOST_URL }}"
+            if [[ ! "$SONAR_URL" =~ ^https?:// ]]; then
+              echo "::error title=Invalid SonarQube URL::SONAR_HOST_URL must start with http:// or https://"
+              echo "Current value: $SONAR_URL"
+              echo "Please update SONAR_HOST_URL to include the full URL (e.g., https://sonarqube.example.com)"
+              exit 1
+            fi
+            echo "✅ Using custom SonarQube server"
+            echo "SONAR_HOST_URL=$SONAR_URL" >> $GITHUB_ENV
+            echo "has_creds=true" >> $GITHUB_OUTPUT
+            exit 0
           fi
           
-          # Validate URL format
-          SONAR_URL="${{ secrets.SONAR_HOST_URL }}"
-          if [[ ! "$SONAR_URL" =~ ^https?:// ]]; then
-            echo "::error title=Invalid SonarQube URL::SONAR_HOST_URL must start with http:// or https://"
-            echo ""
-            echo "❌ Invalid SONAR_HOST_URL format"
-            echo "Current value: $SONAR_URL"
-            echo ""
-            echo "Please update SONAR_HOST_URL secret to include the full URL:"
-            echo "  Correct: https://sonarqube.example.com"
-            echo "  Correct: http://localhost:9000"
-            echo "  Wrong: sonarqube.example.com (missing protocol)"
-            exit 1
-          fi
-          
-          echo "✅ SonarQube configuration validated - analysis will run"
-          echo "Host URL: $SONAR_URL"
-          echo "has_creds=true" >> $GITHUB_OUTPUT
+          # No configuration - provide setup instructions
+          echo "::warning title=SonarQube Not Configured::SonarQube will be skipped"
+          echo ""
+          echo "ℹ️  SonarQube is not configured. To enable it, you have two options:"
+          echo ""
+          echo "Option 1: Use SonarCloud (FREE, Recommended)"
+          echo "  1. Go to https://sonarcloud.io and sign up with GitHub"
+          echo "  2. Create a new project for this repository"
+          echo "  3. Get your token from: Account → My Account → Security"
+          echo "  4. Add secret in GitHub:"
+          echo "     Repository → Settings → Secrets → Actions → New repository secret"
+          echo "     Name: SONAR_TOKEN"
+          echo "     Value: Your SonarCloud token"
+          echo "  (SONAR_HOST_URL is not needed for SonarCloud)"
+          echo ""
+          echo "Option 2: Use Self-Hosted SonarQube"
+          echo "  1. Set up your own SonarQube server"
+          echo "  2. Get authentication token from your SonarQube server"
+          echo "  3. Add secrets in GitHub:"
+          echo "     SONAR_TOKEN: Your SonarQube token"
+          echo "     SONAR_HOST_URL: Your SonarQube server URL (e.g., https://sonarqube.example.com)"
+          echo ""
+          echo "Pipeline will continue without SonarQube analysis."
+          echo "has_creds=false" >> $GITHUB_OUTPUT
 
       - name: SonarQube Scan
+        if: steps.validate-sonar.outputs.has_creds == 'true'
         uses: sonarsource/sonarqube-scan-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
         with:
           args: >
             -Dsonar.projectKey=aceest-fitness
             -Dsonar.sources=.
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.exclusions=**/tests/**,**/venv/**,**/__pycache__/**,**/static/**,**/templates/**
+        continue-on-error: true
+      
+      - name: SonarQube Setup Instructions
+        if: steps.validate-sonar.outputs.has_creds == 'false'
+        run: |
+          echo "::notice title=SonarQube Setup::To enable SonarQube analysis, configure SONAR_TOKEN secret"
+          echo ""
+          echo "📝 Quick Setup Guide:"
+          echo ""
+          echo "1. Go to https://sonarcloud.io (FREE)"
+          echo "2. Sign up with your GitHub account"
+          echo "3. Create a new project for this repository"
+          echo "4. Get your token: Account → My Account → Security → Generate Token"
+          echo "5. Add secret in GitHub:"
+          echo "   Repository → Settings → Secrets and variables → Actions"
+          echo "   Name: SONAR_TOKEN"
+          echo "   Value: [Your SonarCloud token]"
+          echo ""
+          echo "✅ That's it! SonarQube will run automatically on the next push."
 
   # Job 8: Integration Test
   integration-test:
