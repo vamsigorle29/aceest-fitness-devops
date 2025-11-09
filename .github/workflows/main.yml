@@ -193,6 +193,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
+        id: build-image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -201,15 +202,24 @@ jobs:
           tags: aceest-fitness:${{ matrix.version.name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/docker-${{ matrix.version.name }}.tar
+
+      - name: Load Docker image
+        run: |
+          docker load -i /tmp/docker-${{ matrix.version.name }}.tar || echo "Image already loaded"
+          docker images | grep aceest-fitness || echo "Checking available images..."
+          docker images
 
       - name: Test Docker image
         run: |
+          echo "Testing Docker image: aceest-fitness:${{ matrix.version.name }}"
+          docker images | grep aceest-fitness || docker images
           docker run -d -p 5000:5000 --name test-${{ matrix.version.name }} aceest-fitness:${{ matrix.version.name }}
           sleep 10
           curl -f http://localhost:5000/health || exit 1
           echo "✅ Docker image ${{ matrix.version.name }} works correctly"
-          docker stop test-${{ matrix.version.name }}
-          docker rm test-${{ matrix.version.name }}
+          docker stop test-${{ matrix.version.name }} || true
+          docker rm test-${{ matrix.version.name }} || true
 
       - name: Push to Docker Hub (on main branch)
         if: github.ref == 'refs/heads/main'
@@ -233,7 +243,66 @@ jobs:
           cache-to: type=gha,mode=max
         continue-on-error: true
 
-  # Job 5: Kubernetes Validation
+  # Job 5: Jenkinsfile Validation
+  jenkins-validation:
+    name: Jenkinsfile Validation
+    runs-on: ubuntu-latest
+    needs: [validate-files]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Jenkinsfile syntax
+        run: |
+          echo "🔍 Validating Jenkinsfile..."
+          if [ ! -f "Jenkinsfile" ]; then
+            echo "❌ Jenkinsfile not found"
+            exit 1
+          fi
+          
+          # Check for basic Groovy syntax issues
+          if grep -q "pipeline {" Jenkinsfile && grep -q "stages {" Jenkinsfile; then
+            echo "✅ Jenkinsfile structure is valid"
+          else
+            echo "❌ Jenkinsfile missing required pipeline structure"
+            exit 1
+          fi
+          
+          # Check for required stages
+          required_stages=("Checkout" "Unit Tests" "Build Docker Images" "Push to Docker Hub")
+          for stage in "${required_stages[@]}"; do
+            if grep -qi "stage.*$stage" Jenkinsfile || grep -qi "$stage" Jenkinsfile; then
+              echo "✅ Found stage: $stage"
+            else
+              echo "⚠️  Warning: Stage '$stage' not found (may be optional)"
+            fi
+          done
+          
+          echo "✅ Jenkinsfile validation complete"
+
+      - name: Check Jenkinsfile for common issues
+        run: |
+          echo "🔍 Checking for common Jenkinsfile issues..."
+          
+          # Check for placeholder values
+          if grep -q "your-dockerhub-username" Jenkinsfile; then
+            echo "⚠️  Warning: Found placeholder 'your-dockerhub-username' in Jenkinsfile"
+            echo "Please replace with your actual Docker Hub username"
+          else
+            echo "✅ No placeholder values found"
+          fi
+          
+          # Check for credentials
+          if grep -q "credentials" Jenkinsfile; then
+            echo "✅ Credentials configuration found"
+          else
+            echo "⚠️  Note: No credentials found (may need to configure in Jenkins)"
+          fi
+          
+          echo "✅ Jenkinsfile checks complete"
+        continue-on-error: true
+
+  # Job 6: Kubernetes Validation
   kubernetes-validation:
     name: Kubernetes Validation
     runs-on: ubuntu-latest
@@ -266,7 +335,7 @@ jobs:
           fi
         continue-on-error: true
 
-  # Job 6: SonarQube Analysis (Optional)
+  # Job 7: SonarQube Analysis (Optional)
   sonarqube:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
@@ -347,7 +416,7 @@ jobs:
           echo "Note: SONAR_HOST_URL must include the protocol (http:// or https://)"
           echo "Example: https://sonarqube.example.com (NOT just sonarqube.example.com)"
 
-  # Job 7: Integration Test
+  # Job 8: Integration Test
   integration-test:
     name: Integration Test
     runs-on: ubuntu-latest
@@ -393,11 +462,11 @@ jobs:
           
           echo "✅ All API endpoints working"
 
-  # Job 8: Final Summary
+  # Job 9: Final Summary
   summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest
-    needs: [validate-files, code-quality, unit-tests, docker-build, kubernetes-validation, integration-test]
+    needs: [validate-files, code-quality, unit-tests, docker-build, jenkins-validation, kubernetes-validation, integration-test]
     if: always()
     steps:
       - name: Generate summary
@@ -416,6 +485,7 @@ jobs:
           echo "| Code Quality | ${{ needs.code-quality.result }} |" >> pipeline_summary.md
           echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> pipeline_summary.md
           echo "| Docker Build | ${{ needs.docker-build.result }} |" >> pipeline_summary.md
+          echo "| Jenkinsfile Validation | ${{ needs.jenkins-validation.result }} |" >> pipeline_summary.md
           echo "| Kubernetes Validation | ${{ needs.kubernetes-validation.result }} |" >> pipeline_summary.md
           echo "| Integration Test | ${{ needs.integration-test.result }} |" >> pipeline_summary.md
           echo "" >> pipeline_summary.md
