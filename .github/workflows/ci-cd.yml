@@ -1,0 +1,383 @@
+name: CI/CD Pipeline - ACEest Fitness
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+jobs:
+  # Job 1: Code Quality and Linting
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black pylint
+
+      - name: Lint with flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Check code formatting with black
+        run: |
+          black --check .
+
+  # Job 2: Unit Tests
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Test application imports
+        run: |
+          python -c "from app import app; print('✓ app.py imports successfully')"
+          python -c "import importlib.util; spec = importlib.util.spec_from_file_location('app_v1_1', 'app_v1.1.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print('✓ app_v1.1.py imports successfully')"
+          python -c "import importlib.util; spec = importlib.util.spec_from_file_location('app_v1_2', 'app_v1.2.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print('✓ app_v1.2.py imports successfully')"
+          python -c "import importlib.util; spec = importlib.util.spec_from_file_location('app_v1_3', 'app_v1.3.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print('✓ app_v1.3.py imports successfully')"
+
+      - name: Run pytest
+        run: |
+          pytest tests/test_app.py -v --tb=short
+
+      - name: Generate coverage report
+        run: |
+          pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+      - name: Check coverage threshold
+        run: |
+          coverage=$(pytest --cov=. --cov-report=term-missing | grep TOTAL | awk '{print $NF}' | sed 's/%//')
+          if (( $(echo "$coverage < 85" | bc -l) )); then
+            echo "Coverage is $coverage%, which is below the 85% threshold"
+            exit 1
+          else
+            echo "Coverage is $coverage%, which meets the 85% threshold"
+          fi
+
+  # Job 3: Docker Build and Test
+  docker-build:
+    name: Docker Build & Test
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    
+    strategy:
+      matrix:
+        version:
+          - name: latest
+            dockerfile: Dockerfile
+            app_file: app.py
+          - name: v1.1
+            dockerfile: Dockerfile.v1.1
+            app_file: app_v1.1.py
+          - name: v1.2
+            dockerfile: Dockerfile.v1.2
+            app_file: app_v1.2.py
+          - name: v1.3
+            dockerfile: Dockerfile.v1.3
+            app_file: app_v1.3.py
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.version.dockerfile }}
+          push: false
+          tags: aceest-fitness:${{ matrix.version.name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker image
+        run: |
+          docker run -d -p 5000:5000 --name test-${{ matrix.version.name }} aceest-fitness:${{ matrix.version.name }}
+          sleep 10
+          curl -f http://localhost:5000/health || exit 1
+          docker stop test-${{ matrix.version.name }}
+          docker rm test-${{ matrix.version.name }}
+
+      - name: Push to Docker Hub (on main branch)
+        if: github.ref == 'refs/heads/main' && env.DOCKER_HUB_USERNAME != ''
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.version.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.DOCKER_HUB_USERNAME }}/aceest-fitness:${{ matrix.version.name }}
+            ${{ env.DOCKER_HUB_USERNAME }}/aceest-fitness:${{ matrix.version.name }}-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Job 4: Kubernetes Manifest Validation
+  kubernetes-validation:
+    name: Kubernetes Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Validate Kubernetes manifests
+        run: |
+          echo "Validating Kubernetes YAML files..."
+          for file in k8s/*.yaml; do
+            echo "Validating $file"
+            kubectl apply --dry-run=client -f "$file" || exit 1
+          done
+          echo "✓ All Kubernetes manifests are valid"
+
+      - name: Check for placeholder values
+        run: |
+          echo "Checking for placeholder values..."
+          if grep -r "your-dockerhub-username" k8s/; then
+            echo "⚠️  Warning: Found placeholder 'your-dockerhub-username' in Kubernetes files"
+            echo "Please replace with your actual Docker Hub username"
+          else
+            echo "✓ No placeholder values found"
+          fi
+
+  # Job 5: SonarQube Analysis
+  sonarqube:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=. --cov-report=xml --cov-report=html
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=aceest-fitness
+            -Dsonar.sources=.
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.exclusions=**/tests/**,**/venv/**,**/__pycache__/**,**/static/**,**/templates/**
+
+  # Job 6: Integration Test
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: [unit-tests, docker-build]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start application
+        run: |
+          python app.py &
+          sleep 5
+
+      - name: Test API endpoints
+        run: |
+          # Test health endpoint
+          curl -f http://localhost:5000/health || exit 1
+          
+          # Test workouts API
+          curl -f http://localhost:5000/api/workouts || exit 1
+          
+          # Test adding workout
+          curl -X POST http://localhost:5000/api/workouts \
+            -H "Content-Type: application/json" \
+            -d '{"category": "Workout", "exercise": "Test", "duration": 10}' || exit 1
+          
+          # Test summary
+          curl -f http://localhost:5000/api/workouts/summary || exit 1
+          
+          echo "✓ All API endpoints working"
+
+  # Job 7: File Structure Validation
+  file-validation:
+    name: File Structure Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate required files exist
+        run: |
+          echo "Validating project structure..."
+          
+          # Application files
+          test -f app.py || (echo "❌ app.py missing" && exit 1)
+          test -f app_v1.1.py || (echo "❌ app_v1.1.py missing" && exit 1)
+          test -f app_v1.2.py || (echo "❌ app_v1.2.py missing" && exit 1)
+          test -f app_v1.3.py || (echo "❌ app_v1.3.py missing" && exit 1)
+          echo "✓ All application files present"
+          
+          # Docker files
+          test -f Dockerfile || (echo "❌ Dockerfile missing" && exit 1)
+          test -f Dockerfile.v1.1 || (echo "❌ Dockerfile.v1.1 missing" && exit 1)
+          test -f Dockerfile.v1.2 || (echo "❌ Dockerfile.v1.2 missing" && exit 1)
+          test -f Dockerfile.v1.3 || (echo "❌ Dockerfile.v1.3 missing" && exit 1)
+          echo "✓ All Dockerfiles present"
+          
+          # Kubernetes files
+          test -f k8s/namespace.yaml || (echo "❌ k8s/namespace.yaml missing" && exit 1)
+          test -f k8s/configmap.yaml || (echo "❌ k8s/configmap.yaml missing" && exit 1)
+          test -f k8s/secret.yaml || (echo "❌ k8s/secret.yaml missing" && exit 1)
+          test -f k8s/rolling-update-deployment.yaml || (echo "❌ k8s/rolling-update-deployment.yaml missing" && exit 1)
+          test -f k8s/blue-green-deployment.yaml || (echo "❌ k8s/blue-green-deployment.yaml missing" && exit 1)
+          test -f k8s/canary-deployment.yaml || (echo "❌ k8s/canary-deployment.yaml missing" && exit 1)
+          test -f k8s/shadow-deployment.yaml || (echo "❌ k8s/shadow-deployment.yaml missing" && exit 1)
+          test -f k8s/ab-testing-deployment.yaml || (echo "❌ k8s/ab-testing-deployment.yaml missing" && exit 1)
+          echo "✓ All Kubernetes manifests present"
+          
+          # Test files
+          test -f tests/test_app.py || (echo "❌ tests/test_app.py missing" && exit 1)
+          echo "✓ Test files present"
+          
+          # CI/CD files
+          test -f Jenkinsfile || (echo "❌ Jenkinsfile missing" && exit 1)
+          test -f sonar-project.properties || (echo "❌ sonar-project.properties missing" && exit 1)
+          echo "✓ CI/CD files present"
+          
+          # Documentation
+          test -f README.md || (echo "❌ README.md missing" && exit 1)
+          echo "✓ Documentation present"
+          
+          echo "✅ All required files validated successfully!"
+
+  # Job 8: Final Validation Report
+  validation-report:
+    name: Validation Report
+    runs-on: ubuntu-latest
+    needs: [code-quality, unit-tests, docker-build, kubernetes-validation, file-validation]
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate validation report
+        run: |
+          echo "# 🎯 CI/CD Pipeline Validation Report" >> validation_report.md
+          echo "" >> validation_report.md
+          echo "**Date**: $(date)" >> validation_report.md
+          echo "**Commit**: ${{ github.sha }}" >> validation_report.md
+          echo "**Branch**: ${{ github.ref_name }}" >> validation_report.md
+          echo "" >> validation_report.md
+          echo "## ✅ Validation Results" >> validation_report.md
+          echo "" >> validation_report.md
+          echo "| Check | Status |" >> validation_report.md
+          echo "|-------|--------|" >> validation_report.md
+          echo "| Code Quality | ${{ needs.code-quality.result }} |" >> validation_report.md
+          echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> validation_report.md
+          echo "| Docker Build | ${{ needs.docker-build.result }} |" >> validation_report.md
+          echo "| Kubernetes Validation | ${{ needs.kubernetes-validation.result }} |" >> validation_report.md
+          echo "| File Structure | ${{ needs.file-validation.result }} |" >> validation_report.md
+          echo "" >> validation_report.md
+          echo "## 📊 Summary" >> validation_report.md
+          echo "" >> validation_report.md
+          
+          if [ "${{ needs.code-quality.result }}" == "success" ] && \
+             [ "${{ needs.unit-tests.result }}" == "success" ] && \
+             [ "${{ needs.docker-build.result }}" == "success" ] && \
+             [ "${{ needs.kubernetes-validation.result }}" == "success" ] && \
+             [ "${{ needs.file-validation.result }}" == "success" ]; then
+            echo "✅ **All validations passed!**" >> validation_report.md
+            echo "🎉 Project is ready for submission!" >> validation_report.md
+          else
+            echo "⚠️ **Some validations failed. Please review the logs.**" >> validation_report.md
+          fi
+
+      - name: Upload validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-report
+          path: validation_report.md
+
+      - name: Display report
+        run: |
+          cat validation_report.md
+
