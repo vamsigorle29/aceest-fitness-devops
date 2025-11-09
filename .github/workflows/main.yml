@@ -9,8 +9,6 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
-  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
 
 jobs:
   # Job 1: File Structure Validation
@@ -214,24 +212,30 @@ jobs:
           docker rm test-${{ matrix.version.name }}
 
       - name: Push to Docker Hub (on main branch)
-        if: github.ref == 'refs/heads/main' && env.DOCKER_HUB_USERNAME != ''
+        if: github.ref == 'refs/heads/main' && secrets.DOCKER_HUB_USERNAME != ''
         uses: docker/login-action@v3
         with:
-          username: ${{ env.DOCKER_HUB_USERNAME }}
-          password: ${{ env.DOCKER_HUB_TOKEN }}
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Push images
-        if: github.ref == 'refs/heads/main' && env.DOCKER_HUB_USERNAME != ''
+        if: github.ref == 'refs/heads/main' && secrets.DOCKER_HUB_USERNAME != ''
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ${{ matrix.version.dockerfile }}
           push: true
           tags: |
-            ${{ env.DOCKER_HUB_USERNAME }}/aceest-fitness:${{ matrix.version.name }}
-            ${{ env.DOCKER_HUB_USERNAME }}/aceest-fitness:${{ matrix.version.name }}-${{ github.sha }}
+            ${{ secrets.DOCKER_HUB_USERNAME }}/aceest-fitness:${{ matrix.version.name }}
+            ${{ secrets.DOCKER_HUB_USERNAME }}/aceest-fitness:${{ matrix.version.name }}-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      
+      - name: Docker Hub Skip Notice
+        if: github.ref == 'refs/heads/main' && secrets.DOCKER_HUB_USERNAME == ''
+        run: |
+          echo "ℹ️  Docker Hub push skipped: DOCKER_HUB_USERNAME secret not configured"
+          echo "To enable Docker Hub push, add DOCKER_HUB_USERNAME and DOCKER_HUB_TOKEN secrets"
 
   # Job 5: Kubernetes Validation
   kubernetes-validation:
@@ -271,7 +275,7 @@ jobs:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
     needs: [unit-tests]
-    if: github.event_name != 'pull_request' && secrets.SONAR_TOKEN != ''
+    if: github.event_name != 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -293,6 +297,7 @@ jobs:
           pytest tests/ --cov=. --cov-report=xml --cov-report=html
 
       - name: SonarQube Scan
+        if: secrets.SONAR_TOKEN != ''
         uses: sonarsource/sonarqube-scan-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -304,6 +309,12 @@ jobs:
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.exclusions=**/tests/**,**/venv/**,**/__pycache__/**,**/static/**,**/templates/**
         continue-on-error: true
+      
+      - name: SonarQube Skip Notice
+        if: secrets.SONAR_TOKEN == ''
+        run: |
+          echo "ℹ️  SonarQube skipped: SONAR_TOKEN secret not configured"
+          echo "To enable SonarQube, add SONAR_TOKEN and SONAR_HOST_URL secrets in repository settings"
 
   # Job 7: Integration Test
   integration-test:
