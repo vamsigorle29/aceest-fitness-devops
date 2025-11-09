@@ -23,21 +23,73 @@ SonarQube provides:
 
 ### Step 2: Create Project (2 minutes)
 
-1. After logging in, click **"+"** → **"Analyze new project"**
-2. Select **"From GitHub"**
-3. Choose your organization/user: **vamsigorle29**
-4. Select repository: **aceest-fitness-devops**
-5. Click **"Set up"**
-6. Choose **"Free"** plan
-7. Click **"Create project"**
+**What you're doing**: Connecting SonarCloud to your GitHub repository
 
-### Step 3: Get Your Token (1 minute)
+**Detailed Steps**:
 
-1. Click your profile icon (top right)
-2. Go to **"My Account"** → **"Security"**
-3. Under **"Generate Tokens"**, enter name: **`GitHub Actions`**
-4. Click **"Generate"**
-5. **COPY THE TOKEN** (you won't see it again!)
+1. **Find the "+" button** (usually in the top navigation bar)
+   - Click the **"+"** icon
+   - From the dropdown menu, select **"Analyze new project"**
+
+2. **Connect to GitHub**:
+   - You'll see options to import projects
+   - Click **"From GitHub"** (this allows SonarCloud to access your repos)
+
+3. **Select your GitHub organization/user**:
+   - You'll see a list of your GitHub organizations/users
+   - Find and click on: **vamsigorle29**
+
+4. **Select your repository**:
+   - You'll see a list of repositories under vamsigorle29
+   - Find and click on: **aceest-fitness-devops**
+
+5. **Configure the project**:
+   - Click the **"Set up"** button next to the repository name
+
+6. **Choose the plan**:
+   - Select **"Free"** plan (this is sufficient for your project)
+   - Review the plan details if needed
+
+7. **Create the project**:
+   - Click **"Create project"** button
+   - ⚠️ **IMPORTANT**: Note the project key shown (usually: `vamsigorle29_aceest-fitness-devops`)
+   - You'll be redirected to your project dashboard
+
+**✅ Success**: You should see your project dashboard with a message like "No analysis yet"
+
+---
+
+### Step 3: Get Your Authentication Token (1 minute)
+
+**What you're doing**: Creating a secure token that GitHub Actions will use to send code analysis to SonarCloud
+
+**Detailed Steps**:
+
+1. **Open your account settings**:
+   - Look at the **top right corner** of the SonarCloud page
+   - Click on your **profile icon/avatar** (usually a circle with your initials)
+
+2. **Navigate to Security settings**:
+   - From the dropdown menu, click **"My Account"**
+   - In the left sidebar, click **"Security"** tab
+
+3. **Generate a new token**:
+   - Scroll down to find the **"Generate Tokens"** section
+   - In the **"Name"** field, type: **`GitHub Actions`** (or any descriptive name)
+   - This name helps you identify what this token is used for
+
+4. **Create the token**:
+   - Click the **"Generate"** button
+   - ⚠️ **CRITICAL**: A token will appear on screen (looks like: `a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6`)
+   - **COPY THIS TOKEN IMMEDIATELY** - you won't be able to see it again!
+   - Save it somewhere safe (like a text file) until you add it to GitHub
+
+5. **Verify you have the token**:
+   - The token should be a long string of letters and numbers
+   - It should be around 40 characters long
+   - Make sure you've copied the entire token
+
+**✅ Success**: You now have a token that looks like: `a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6`
 
 ### Step 4: Add Secret to GitHub (1 minute)
 
