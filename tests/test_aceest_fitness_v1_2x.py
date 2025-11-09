@@ -7,6 +7,19 @@ import os
 import importlib.util
 from unittest.mock import Mock, patch
 
+# Skip all Tkinter tests in CI environments (tkinter not available)
+try:
+    import tkinter
+    from tkinter import messagebox
+    TKINTER_AVAILABLE = True
+except (ImportError, AttributeError):
+    TKINTER_AVAILABLE = False
+
+pytestmark = pytest.mark.skipif(
+    not TKINTER_AVAILABLE,
+    reason="Tkinter not available in CI environment"
+)
+
 def load_aceest_version(version):
     """Load ACEest_Fitness version module"""
     filename = f'ACEest_Fitness-V{version}.py'

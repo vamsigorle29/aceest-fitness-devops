@@ -8,6 +8,19 @@ import importlib.util
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 
+# Skip all Tkinter tests in CI environments (tkinter not available)
+try:
+    import tkinter
+    from tkinter import messagebox
+    TKINTER_AVAILABLE = True
+except (ImportError, AttributeError):
+    TKINTER_AVAILABLE = False
+
+pytestmark = pytest.mark.skipif(
+    not TKINTER_AVAILABLE,
+    reason="Tkinter not available in CI environment"
+)
+
 def load_aceest_v1_1():
     """Load ACEest_Fitness-V1.1 module"""
     file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'ACEest_Fitness-V1.1.py')
