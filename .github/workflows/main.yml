@@ -212,14 +212,15 @@ jobs:
           docker rm test-${{ matrix.version.name }}
 
       - name: Push to Docker Hub (on main branch)
-        if: github.ref == 'refs/heads/main' && secrets.DOCKER_HUB_USERNAME != ''
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
+        continue-on-error: true
 
       - name: Push images
-        if: github.ref == 'refs/heads/main' && secrets.DOCKER_HUB_USERNAME != ''
+        if: github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -230,12 +231,7 @@ jobs:
             ${{ secrets.DOCKER_HUB_USERNAME }}/aceest-fitness:${{ matrix.version.name }}-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
-      - name: Docker Hub Skip Notice
-        if: github.ref == 'refs/heads/main' && secrets.DOCKER_HUB_USERNAME == ''
-        run: |
-          echo "ℹ️  Docker Hub push skipped: DOCKER_HUB_USERNAME secret not configured"
-          echo "To enable Docker Hub push, add DOCKER_HUB_USERNAME and DOCKER_HUB_TOKEN secrets"
+        continue-on-error: true
 
   # Job 5: Kubernetes Validation
   kubernetes-validation:
@@ -297,7 +293,6 @@ jobs:
           pytest tests/ --cov=. --cov-report=xml --cov-report=html
 
       - name: SonarQube Scan
-        if: secrets.SONAR_TOKEN != ''
         uses: sonarsource/sonarqube-scan-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -309,12 +304,6 @@ jobs:
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.exclusions=**/tests/**,**/venv/**,**/__pycache__/**,**/static/**,**/templates/**
         continue-on-error: true
-      
-      - name: SonarQube Skip Notice
-        if: secrets.SONAR_TOKEN == ''
-        run: |
-          echo "ℹ️  SonarQube skipped: SONAR_TOKEN secret not configured"
-          echo "To enable SonarQube, add SONAR_TOKEN and SONAR_HOST_URL secrets in repository settings"
 
   # Job 7: Integration Test
   integration-test:
