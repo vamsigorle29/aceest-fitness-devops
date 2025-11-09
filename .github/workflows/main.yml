@@ -214,10 +214,78 @@ jobs:
         run: |
           echo "Testing Docker image: aceest-fitness:${{ matrix.version.name }}"
           docker images | grep aceest-fitness || docker images
-          docker run -d -p 5000:5000 --name test-${{ matrix.version.name }} aceest-fitness:${{ matrix.version.name }}
-          sleep 10
-          curl -f http://localhost:5000/health || exit 1
+          
+          # Start container
+          echo "Starting container..."
+          CONTAINER_ID=$(docker run -d -p 5000:5000 --name test-${{ matrix.version.name }} aceest-fitness:${{ matrix.version.name }})
+          echo "Container ID: $CONTAINER_ID"
+          
+          # Wait a bit for container to initialize
+          echo "Waiting for container to initialize..."
+          sleep 3
+          
+          # Check container status
+          echo "Checking container status..."
+          docker ps -a | grep test-${{ matrix.version.name }} || true
+          
+          # Check if container is running
+          if ! docker ps | grep -q test-${{ matrix.version.name }}; then
+            echo "❌ Container exited. Checking logs..."
+            echo "=== Container Logs ==="
+            docker logs test-${{ matrix.version.name }} || true
+            echo "=== Container Status ==="
+            docker ps -a | grep test-${{ matrix.version.name }} || true
+            echo "=== Container Inspect ==="
+            docker inspect test-${{ matrix.version.name }} | grep -A 10 "State" || true
+            exit 1
+          fi
+          
+          echo "✅ Container is running. Waiting for application to be ready..."
+          
+          # Show container logs in background
+          docker logs -f test-${{ matrix.version.name }} &
+          LOG_PID=$!
+          
+          # Retry health check with timeout (up to 60 seconds)
+          max_attempts=12
+          attempt=0
+          success=false
+          
+          while [ $attempt -lt $max_attempts ]; do
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts: Checking health endpoint..."
+            
+            if curl -f -s -m 5 http://localhost:5000/health > /dev/null 2>&1; then
+              echo "✅ Health check passed!"
+              echo "Health endpoint response:"
+              curl -s http://localhost:5000/health
+              success=true
+              break
+            fi
+            
+            if [ $attempt -lt $max_attempts ]; then
+              echo "Waiting 5 seconds before retry..."
+              sleep 5
+            fi
+          done
+          
+          # Stop log following
+          kill $LOG_PID 2>/dev/null || true
+          
+          if [ "$success" != "true" ]; then
+            echo "❌ Health check failed after $max_attempts attempts (60 seconds)"
+            echo "=== Final Container Logs ==="
+            docker logs --tail 50 test-${{ matrix.version.name }} || true
+            echo "=== Container Status ==="
+            docker ps -a | grep test-${{ matrix.version.name }} || true
+            echo "=== Port Check ==="
+            netstat -tuln | grep 5000 || ss -tuln | grep 5000 || echo "Port 5000 not listening"
+            exit 1
+          fi
+          
           echo "✅ Docker image ${{ matrix.version.name }} works correctly"
+          
+          # Cleanup
           docker stop test-${{ matrix.version.name }} || true
           docker rm test-${{ matrix.version.name }} || true
 
