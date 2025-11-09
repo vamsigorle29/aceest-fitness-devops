@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workout Summary - ACEest Fitness v1.1</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Workout Summary</h1>
+            <a href="/" class="btn">Back to Home</a>
+        </header>
+
+        <main>
+            <div class="card">
+                <h2>Total Time: {{ total_time }} minutes</h2>
+            </div>
+
+            {% for category, sessions in workouts.items() %}
+            <div class="card">
+                <h3>{{ category }}</h3>
+                {% if sessions %}
+                    <ul>
+                        {% for entry in sessions %}
+                        <li>
+                            {{ entry.exercise }} - {{ entry.duration }} min 
+                            <span class="timestamp">({{ entry.timestamp }})</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p>No workouts logged yet.</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </main>
+    </div>
+</body>
+</html>
