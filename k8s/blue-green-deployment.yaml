@@ -1,0 +1,135 @@
+# Blue-Green Deployment Strategy
+# Blue (current stable version)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-fitness-blue
+  namespace: aceest-fitness
+  labels:
+    app: aceest-fitness
+    color: blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      color: blue
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        color: blue
+        version: v1.2
+    spec:
+      containers:
+      - name: aceest-fitness
+        image: your-dockerhub-username/aceest-fitness:v1.2
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+        env:
+        - name: PORT
+          value: "5000"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+# Green (new version to deploy)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-fitness-green
+  namespace: aceest-fitness
+  labels:
+    app: aceest-fitness
+    color: green
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      color: green
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        color: green
+        version: v1.3
+    spec:
+      containers:
+      - name: aceest-fitness
+        image: your-dockerhub-username/aceest-fitness:v1.3
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+        env:
+        - name: PORT
+          value: "5000"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+# Service pointing to Blue (production)
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-fitness-service
+  namespace: aceest-fitness
+spec:
+  type: LoadBalancer
+  selector:
+    app: aceest-fitness
+    color: blue
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 5000
+---
+# Service for Green (testing)
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-fitness-green-service
+  namespace: aceest-fitness
+spec:
+  type: ClusterIP
+  selector:
+    app: aceest-fitness
+    color: green
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 5000
+

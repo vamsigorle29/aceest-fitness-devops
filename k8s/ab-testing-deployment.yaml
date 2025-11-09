@@ -1,0 +1,158 @@
+# A/B Testing Deployment Strategy
+# Version A (50% of traffic)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-fitness-version-a
+  namespace: aceest-fitness
+  labels:
+    app: aceest-fitness
+    variant: version-a
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      variant: version-a
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        variant: version-a
+        version: v1.2
+    spec:
+      containers:
+      - name: aceest-fitness
+        image: your-dockerhub-username/aceest-fitness:v1.2
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+        env:
+        - name: PORT
+          value: "5000"
+        - name: VERSION_VARIANT
+          value: "A"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+# Version B (50% of traffic)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-fitness-version-b
+  namespace: aceest-fitness
+  labels:
+    app: aceest-fitness
+    variant: version-b
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      variant: version-b
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        variant: version-b
+        version: v1.3
+    spec:
+      containers:
+      - name: aceest-fitness
+        image: your-dockerhub-username/aceest-fitness:v1.3
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+        env:
+        - name: PORT
+          value: "5000"
+        - name: VERSION_VARIANT
+          value: "B"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+# Service with A/B testing (using Istio)
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-fitness-service
+  namespace: aceest-fitness
+spec:
+  type: LoadBalancer
+  selector:
+    app: aceest-fitness
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 5000
+---
+# Istio VirtualService for A/B testing (50/50 split)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: aceest-fitness-ab-vs
+  namespace: aceest-fitness
+spec:
+  hosts:
+  - aceest-fitness-service
+  http:
+  - route:
+    - destination:
+        host: aceest-fitness-service
+        subset: version-a
+      weight: 50
+    - destination:
+        host: aceest-fitness-service
+        subset: version-b
+      weight: 50
+---
+# DestinationRule for A/B variants
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: aceest-fitness-ab-dr
+  namespace: aceest-fitness
+spec:
+  host: aceest-fitness-service
+  subsets:
+  - name: version-a
+    labels:
+      variant: version-a
+  - name: version-b
+    labels:
+      variant: version-b
+

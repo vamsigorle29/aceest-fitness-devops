@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aceest-fitness-config
+  namespace: aceest-fitness
+data:
+  APP_ENV: "production"
+  PORT: "5000"
+  LOG_LEVEL: "info"
+
