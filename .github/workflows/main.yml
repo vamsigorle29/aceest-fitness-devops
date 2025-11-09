@@ -484,6 +484,7 @@ jobs:
           echo "has_creds=false" >> $GITHUB_OUTPUT
 
       - name: SonarQube Scan
+        id: sonar-scan
         uses: sonarsource/sonarqube-scan-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -497,40 +498,26 @@ jobs:
             -Dsonar.exclusions=**/tests/**,**/venv/**,**/__pycache__/**,**/static/**,**/templates/**
         continue-on-error: true
       
-      - name: SonarQube Setup Help
-        if: failure()
+      - name: SonarQube Error Handling
+        if: failure() && steps.sonar-scan.outcome == 'failure'
         run: |
-          echo "::error title=SonarQube Setup Required::SonarQube analysis failed - setup required"
+          echo "::warning title=SonarQube Analysis Skipped::SonarQube analysis failed - this is optional"
           echo ""
-          echo "📝 Quick Setup (FREE, 5 minutes):"
+          echo "⚠️  SonarQube analysis could not complete. Common reasons:"
           echo ""
-          echo "Step 1: Create SonarCloud Account & Project"
-          echo "  1. Go to: https://sonarcloud.io/signup"
-          echo "  2. Click 'Log in with GitHub' and authorize"
-          echo "  3. Click '+' → 'Analyze new project'"
-          echo "  4. Select 'From GitHub' → Choose 'vamsigorle29' → Select 'aceest-fitness-devops'"
-          echo "  5. Click 'Set up' → Choose 'Free' plan → 'Create project'"
-          echo "  6. IMPORTANT: Note the project key shown (usually: vamsigorle29_aceest-fitness-devops)"
+          echo "1. Project not created in SonarCloud yet"
+          echo "   → Create project at: https://sonarcloud.io"
+          echo "   → Select: From GitHub → vamsigorle29 → aceest-fitness-devops"
           echo ""
-          echo "Step 2: Get Authentication Token"
-          echo "  1. In SonarCloud: Account → My Account → Security"
-          echo "  2. Under 'Generate Tokens', enter name: 'GitHub Actions'"
-          echo "  3. Click 'Generate' → COPY THE TOKEN (you won't see it again!)"
+          echo "2. SONAR_TOKEN secret not configured"
+          echo "   → Add SONAR_TOKEN secret in GitHub repository settings"
           echo ""
-          echo "Step 3: Add Secrets to GitHub"
-          echo "  Go to: https://github.com/vamsigorle29/aceest-fitness-devops/settings/secrets/actions"
-          echo "  Add these secrets:"
-          echo "    - Name: SONAR_TOKEN"
-          echo "      Value: [Your token from Step 2]"
-          echo "    - Name: SONAR_PROJECT_KEY (optional, if project key is different)"
-          echo "      Value: [Your project key from Step 1, if different from default]"
+          echo "3. Project key mismatch"
+          echo "   → Verify project key in SonarCloud matches: vamsigorle29_aceest-fitness-devops"
+          echo "   → Or add SONAR_PROJECT_KEY secret with correct key"
           echo ""
-          echo "Step 4: Verify Project Key"
-          echo "  Default project key: vamsigorle29_aceest-fitness-devops"
-          echo "  If your project key is different, add SONAR_PROJECT_KEY secret"
-          echo ""
-          echo "✅ After setup, push code again and SonarQube will run successfully"
-          echo "📚 See QUICK_SONARQUBE_SETUP.md for detailed steps"
+          echo "✅ Pipeline continues successfully - SonarQube is optional"
+          echo "📚 See QUICK_SONARQUBE_SETUP.md for complete setup guide"
 
   # Job 8: Integration Test
   integration-test:
