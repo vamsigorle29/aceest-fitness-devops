@@ -491,15 +491,6 @@ jobs:
           echo ""
           echo "✅ After adding SONAR_TOKEN, SonarQube will run successfully"
           echo "📚 See QUICK_SONARQUBE_SETUP.md for detailed steps"
-          echo "1. Sign up: https://sonarcloud.io/signup (Log in with GitHub)"
-          echo "2. Create project: Click '+' → 'From GitHub' → Select 'aceest-fitness-devops' → 'Free' plan"
-          echo "3. Get token: Account → My Account → Security → Generate Token → Copy it"
-          echo "4. Add secret: https://github.com/vamsigorle29/aceest-fitness-devops/settings/secrets/actions"
-          echo "   - Name: SONAR_TOKEN"
-          echo "   - Value: [Paste token from step 3]"
-          echo ""
-          echo "✅ After adding SONAR_TOKEN, SonarQube will run successfully"
-          echo "📚 See QUICK_SONARQUBE_SETUP.md for detailed steps"
 
   # Job 8: Integration Test
   integration-test:
