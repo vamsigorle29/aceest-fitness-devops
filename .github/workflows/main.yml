@@ -469,7 +469,8 @@ jobs:
           SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
         with:
           args: >
-            -Dsonar.projectKey=aceest-fitness
+            -Dsonar.organization=vamsigorle29
+            -Dsonar.projectKey=vamsigorle29_aceest-fitness-devops
             -Dsonar.sources=.
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.exclusions=**/tests/**,**/venv/**,**/__pycache__/**,**/static/**,**/templates/**
