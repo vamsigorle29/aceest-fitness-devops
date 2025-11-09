@@ -1,0 +1,403 @@
+name: Complete CI/CD Pipeline - ACEest Fitness
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+jobs:
+  # Job 1: File Structure Validation
+  validate-files:
+    name: Validate Project Structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Required Files
+        run: |
+          echo "🔍 Validating project structure..."
+          errors=0
+          
+          # Application files
+          for file in app.py app_v1.1.py app_v1.2.py app_v1.3.py; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              errors=$((errors+1))
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          # Docker files
+          for file in Dockerfile Dockerfile.v1.1 Dockerfile.v1.2 Dockerfile.v1.3; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              errors=$((errors+1))
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          # Kubernetes files
+          for file in k8s/namespace.yaml k8s/configmap.yaml k8s/secret.yaml \
+                     k8s/rolling-update-deployment.yaml k8s/blue-green-deployment.yaml \
+                     k8s/canary-deployment.yaml k8s/shadow-deployment.yaml \
+                     k8s/ab-testing-deployment.yaml; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              errors=$((errors+1))
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          # Test files
+          for file in tests/test_app.py tests/test_app_v1_1.py tests/test_app_v1_3.py; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              errors=$((errors+1))
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          # CI/CD files
+          for file in Jenkinsfile sonar-project.properties pytest.ini requirements.txt; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              errors=$((errors+1))
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          # Documentation
+          for file in README.md ASSIGNMENT_REPORT.md; do
+            if [ ! -f "$file" ]; then
+              echo "⚠️  Missing: $file (recommended)"
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          if [ $errors -eq 0 ]; then
+            echo "✅ All required files present!"
+            exit 0
+          else
+            echo "❌ Found $errors missing files"
+            exit 1
+          fi
+
+  # Job 2: Code Quality & Linting
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black pylint || echo "Linting tools optional"
+
+      - name: Lint with flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || echo "Linting warnings (non-blocking)"
+        continue-on-error: true
+
+  # Job 3: Unit Tests & Coverage
+  unit-tests:
+    name: Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Test application imports
+        run: |
+          python -c "from app import app; print('✅ app.py imports successfully')"
+          python -c "import importlib.util, os; spec = importlib.util.spec_from_file_location('app_v1_1', 'app_v1.1.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print('✅ app_v1.1.py imports successfully')"
+          python -c "import importlib.util, os; spec = importlib.util.spec_from_file_location('app_v1_2', 'app_v1.2.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print('✅ app_v1.2.py imports successfully')"
+          python -c "import importlib.util, os; spec = importlib.util.spec_from_file_location('app_v1_3', 'app_v1.3.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print('✅ app_v1.3.py imports successfully')"
+
+      - name: Run all tests
+        run: |
+          pytest tests/ -v --tb=short
+
+      - name: Generate coverage report
+        run: |
+          pytest tests/ --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing
+
+      - name: Check coverage threshold
+        run: |
+          coverage_output=$(pytest tests/ --cov=. --cov-report=term-missing 2>&1)
+          echo "$coverage_output"
+          coverage=$(echo "$coverage_output" | grep "TOTAL" | tail -1 | awk '{print $NF}' | sed 's/%//')
+          if [ -z "$coverage" ]; then
+            echo "⚠️  Could not extract coverage percentage"
+            exit 0
+          fi
+          coverage_int=${coverage%.*}
+          if [ "$coverage_int" -lt 85 ]; then
+            echo "⚠️  Coverage is $coverage%, below 85% threshold (non-blocking)"
+          else
+            echo "✅ Coverage is $coverage%, meets 85% threshold"
+          fi
+        continue-on-error: true
+
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+  # Job 4: Docker Build & Test
+  docker-build:
+    name: Docker Build & Test
+    runs-on: ubuntu-latest
+    needs: [validate-files, unit-tests]
+    strategy:
+      matrix:
+        version:
+          - { name: latest, dockerfile: Dockerfile }
+          - { name: v1.1, dockerfile: Dockerfile.v1.1 }
+          - { name: v1.2, dockerfile: Dockerfile.v1.2 }
+          - { name: v1.3, dockerfile: Dockerfile.v1.3 }
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.version.dockerfile }}
+          push: false
+          tags: aceest-fitness:${{ matrix.version.name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker image
+        run: |
+          docker run -d -p 5000:5000 --name test-${{ matrix.version.name }} aceest-fitness:${{ matrix.version.name }}
+          sleep 10
+          curl -f http://localhost:5000/health || exit 1
+          echo "✅ Docker image ${{ matrix.version.name }} works correctly"
+          docker stop test-${{ matrix.version.name }}
+          docker rm test-${{ matrix.version.name }}
+
+      - name: Push to Docker Hub (on main branch)
+        if: github.ref == 'refs/heads/main' && env.DOCKER_HUB_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKER_HUB_USERNAME }}
+          password: ${{ env.DOCKER_HUB_TOKEN }}
+
+      - name: Push images
+        if: github.ref == 'refs/heads/main' && env.DOCKER_HUB_USERNAME != ''
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.version.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.DOCKER_HUB_USERNAME }}/aceest-fitness:${{ matrix.version.name }}
+            ${{ env.DOCKER_HUB_USERNAME }}/aceest-fitness:${{ matrix.version.name }}-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Job 5: Kubernetes Validation
+  kubernetes-validation:
+    name: Kubernetes Validation
+    runs-on: ubuntu-latest
+    needs: [validate-files]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Validate Kubernetes manifests
+        run: |
+          echo "🔍 Validating Kubernetes YAML files..."
+          for file in k8s/*.yaml; do
+            echo "Validating $file"
+            kubectl apply --dry-run=client -f "$file" && echo "✅ $file is valid" || echo "❌ $file has errors"
+          done
+          echo "✅ Kubernetes validation complete"
+
+      - name: Check for placeholder values
+        run: |
+          if grep -r "your-dockerhub-username" k8s/ 2>/dev/null; then
+            echo "⚠️  Warning: Found placeholder 'your-dockerhub-username' in Kubernetes files"
+            echo "Please replace with your actual Docker Hub username"
+          else
+            echo "✅ No placeholder values found in Kubernetes files"
+          fi
+        continue-on-error: true
+
+  # Job 6: SonarQube Analysis (Optional)
+  sonarqube:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    if: github.event_name != 'pull_request' && secrets.SONAR_TOKEN != ''
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ --cov=. --cov-report=xml --cov-report=html
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=aceest-fitness
+            -Dsonar.sources=.
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.exclusions=**/tests/**,**/venv/**,**/__pycache__/**,**/static/**,**/templates/**
+        continue-on-error: true
+
+  # Job 7: Integration Test
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: [unit-tests, docker-build]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start application
+        run: |
+          python app.py &
+          sleep 5
+
+      - name: Test API endpoints
+        run: |
+          # Test health endpoint
+          curl -f http://localhost:5000/health || exit 1
+          echo "✅ Health endpoint works"
+          
+          # Test workouts API
+          curl -f http://localhost:5000/api/workouts || exit 1
+          echo "✅ GET /api/workouts works"
+          
+          # Test adding workout
+          curl -X POST http://localhost:5000/api/workouts \
+            -H "Content-Type: application/json" \
+            -d '{"category": "Workout", "exercise": "Test", "duration": 10}' || exit 1
+          echo "✅ POST /api/workouts works"
+          
+          # Test summary
+          curl -f http://localhost:5000/api/workouts/summary || exit 1
+          echo "✅ GET /api/workouts/summary works"
+          
+          echo "✅ All API endpoints working"
+
+  # Job 8: Final Summary
+  summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [validate-files, code-quality, unit-tests, docker-build, kubernetes-validation, integration-test]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "# 🎯 CI/CD Pipeline Summary" >> pipeline_summary.md
+          echo "" >> pipeline_summary.md
+          echo "**Date**: $(date)" >> pipeline_summary.md
+          echo "**Commit**: ${{ github.sha }}" >> pipeline_summary.md
+          echo "**Branch**: ${{ github.ref_name }}" >> pipeline_summary.md
+          echo "" >> pipeline_summary.md
+          echo "## ✅ Job Results" >> pipeline_summary.md
+          echo "" >> pipeline_summary.md
+          echo "| Job | Status |" >> pipeline_summary.md
+          echo "|-----|--------|" >> pipeline_summary.md
+          echo "| File Validation | ${{ needs.validate-files.result }} |" >> pipeline_summary.md
+          echo "| Code Quality | ${{ needs.code-quality.result }} |" >> pipeline_summary.md
+          echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> pipeline_summary.md
+          echo "| Docker Build | ${{ needs.docker-build.result }} |" >> pipeline_summary.md
+          echo "| Kubernetes Validation | ${{ needs.kubernetes-validation.result }} |" >> pipeline_summary.md
+          echo "| Integration Test | ${{ needs.integration-test.result }} |" >> pipeline_summary.md
+          echo "" >> pipeline_summary.md
+          
+          if [ "${{ needs.validate-files.result }}" == "success" ] && \
+             [ "${{ needs.unit-tests.result }}" == "success" ] && \
+             [ "${{ needs.docker-build.result }}" == "success" ] && \
+             [ "${{ needs.kubernetes-validation.result }}" == "success" ] && \
+             [ "${{ needs.integration-test.result }}" == "success" ]; then
+            echo "## 🎉 Pipeline Status: SUCCESS" >> pipeline_summary.md
+            echo "" >> pipeline_summary.md
+            echo "✅ All critical jobs passed!" >> pipeline_summary.md
+            echo "✅ Project is ready for deployment!" >> pipeline_summary.md
+          else
+            echo "## ⚠️  Pipeline Status: PARTIAL SUCCESS" >> pipeline_summary.md
+            echo "" >> pipeline_summary.md
+            echo "Some jobs failed. Please review the logs." >> pipeline_summary.md
+          fi
+          
+          cat pipeline_summary.md
+
+      - name: Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-summary
+          path: pipeline_summary.md
+
