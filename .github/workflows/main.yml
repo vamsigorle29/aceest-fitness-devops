@@ -436,7 +436,7 @@ jobs:
           
           # Check if using SonarCloud (free cloud version)
           if [ -n "${{ secrets.SONAR_TOKEN }}" ] && [ -z "${{ secrets.SONAR_HOST_URL }}" ]; then
-            echo "✅ Using SonarCloud (free cloud version)"
+            echo "✅ SonarQube configured: Using SonarCloud (free cloud version)"
             echo "SONAR_HOST_URL=https://sonarcloud.io" >> $GITHUB_ENV
             echo "has_creds=true" >> $GITHUB_OUTPUT
             exit 0
@@ -451,35 +451,14 @@ jobs:
               echo "Please update SONAR_HOST_URL to include the full URL (e.g., https://sonarqube.example.com)"
               exit 1
             fi
-            echo "✅ Using custom SonarQube server"
+            echo "✅ SonarQube configured: Using custom SonarQube server"
             echo "SONAR_HOST_URL=$SONAR_URL" >> $GITHUB_ENV
             echo "has_creds=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          # No configuration - provide setup instructions
-          echo "::warning title=SonarQube Not Configured::SonarQube will be skipped"
-          echo ""
-          echo "ℹ️  SonarQube is not configured. To enable it, you have two options:"
-          echo ""
-          echo "Option 1: Use SonarCloud (FREE, Recommended)"
-          echo "  1. Go to https://sonarcloud.io and sign up with GitHub"
-          echo "  2. Create a new project for this repository"
-          echo "  3. Get your token from: Account → My Account → Security"
-          echo "  4. Add secret in GitHub:"
-          echo "     Repository → Settings → Secrets → Actions → New repository secret"
-          echo "     Name: SONAR_TOKEN"
-          echo "     Value: Your SonarCloud token"
-          echo "  (SONAR_HOST_URL is not needed for SonarCloud)"
-          echo ""
-          echo "Option 2: Use Self-Hosted SonarQube"
-          echo "  1. Set up your own SonarQube server"
-          echo "  2. Get authentication token from your SonarQube server"
-          echo "  3. Add secrets in GitHub:"
-          echo "     SONAR_TOKEN: Your SonarQube token"
-          echo "     SONAR_HOST_URL: Your SonarQube server URL (e.g., https://sonarqube.example.com)"
-          echo ""
-          echo "Pipeline will continue without SonarQube analysis."
+          # No configuration - mark as configured but provide instructions
+          echo "ℹ️  SonarQube not configured (optional step)"
           echo "has_creds=false" >> $GITHUB_OUTPUT
 
       - name: SonarQube Scan
@@ -499,37 +478,19 @@ jobs:
       - name: SonarQube Setup Instructions
         if: steps.validate-sonar.outputs.has_creds == 'false'
         run: |
-          echo "::notice title=SonarQube Setup Required::SonarQube analysis requires SONAR_TOKEN secret"
+          echo "::notice title=SonarQube Optional::SonarQube is optional - pipeline continues successfully"
           echo ""
-          echo "🔧 Quick Setup (5 minutes, FREE):"
+          echo "📝 To enable SonarQube (FREE, 5 minutes):"
           echo ""
-          echo "Step 1: Create SonarCloud Account"
-          echo "  → Visit: https://sonarcloud.io/signup"
-          echo "  → Click 'Log in with GitHub'"
-          echo "  → Authorize SonarCloud"
+          echo "1. Sign up: https://sonarcloud.io/signup (Log in with GitHub)"
+          echo "2. Create project: Click '+' → 'From GitHub' → Select this repo → 'Free' plan"
+          echo "3. Get token: Account → My Account → Security → Generate Token → Copy it"
+          echo "4. Add secret: https://github.com/vamsigorle29/aceest-fitness-devops/settings/secrets/actions"
+          echo "   - Name: SONAR_TOKEN"
+          echo "   - Value: [Paste token from step 3]"
           echo ""
-          echo "Step 2: Create Project"
-          echo "  → Click '+' → 'Analyze new project'"
-          echo "  → Select 'From GitHub'"
-          echo "  → Choose repository: vamsigorle29/aceest-fitness-devops"
-          echo "  → Click 'Set up' → Choose 'Free' → 'Create project'"
-          echo ""
-          echo "Step 3: Get Token"
-          echo "  → Go to: Account → My Account → Security"
-          echo "  → Under 'Generate Tokens', enter name: 'GitHub Actions'"
-          echo "  → Click 'Generate'"
-          echo "  → COPY THE TOKEN (you won't see it again!)"
-          echo ""
-          echo "Step 4: Add Secret to GitHub"
-          echo "  → Go to: https://github.com/vamsigorle29/aceest-fitness-devops/settings/secrets/actions"
-          echo "  → Click 'New repository secret'"
-          echo "  → Name: SONAR_TOKEN"
-          echo "  → Value: [Paste your token from Step 3]"
-          echo "  → Click 'Add secret'"
-          echo ""
-          echo "✅ Done! Push code again and SonarQube will run automatically."
-          echo ""
-          echo "📚 Full guide: See SONARQUBE_SETUP_GUIDE.md in the repository"
+          echo "✅ After adding SONAR_TOKEN, SonarQube runs automatically on next push"
+          echo "📚 See QUICK_SONARQUBE_SETUP.md for detailed steps"
 
   # Job 8: Integration Test
   integration-test:
