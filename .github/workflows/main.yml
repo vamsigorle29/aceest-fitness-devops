@@ -491,11 +491,6 @@ jobs:
           echo ""
           echo "✅ After adding SONAR_TOKEN, SonarQube will run successfully"
           echo "📚 See QUICK_SONARQUBE_SETUP.md for detailed steps"
-        run: |
-          echo "::error title=SonarQube Setup Required::SONAR_TOKEN secret is required for SonarQube analysis"
-          echo ""
-          echo "📝 Quick Setup (FREE, 5 minutes):"
-          echo ""
           echo "1. Sign up: https://sonarcloud.io/signup (Log in with GitHub)"
           echo "2. Create project: Click '+' → 'From GitHub' → Select 'aceest-fitness-devops' → 'Free' plan"
           echo "3. Get token: Account → My Account → Security → Generate Token → Copy it"
